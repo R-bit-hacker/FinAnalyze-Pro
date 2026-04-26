@@ -7,7 +7,7 @@ from PIL import Image
 
 # Import ROOT_DIR from utils to avoid hardcoding
 from utils import apply_styling, run_query, get_paths, ROOT_DIR
-from auth import show_auth_page, update_user_profile
+from auth import update_user_profile, login_user, create_user
 from dashboard import show_dashboard
 from chatbot import show_chatbot
 from about_us import show_about_page
@@ -23,7 +23,6 @@ from init_db import init_db
 
 # Exact path dhoondne ke liye dynamic logic
 db_file = os.path.join(os.getcwd(), "users.db")
-
 if not os.path.exists(db_file):
     init_db()
 
@@ -40,12 +39,10 @@ apply_styling()
 # --- 🛠️ FIX: FORCE SIDEBAR VISIBILITY ---
 st.markdown("""
     <style>
-        /* Sidebar ko zabardasti dikhao */
         section[data-testid="stSidebar"] {
             display: block !important;
             visibility: visible !important;
         }
-        /* Agar toggle button gayab hai to wapis lao */
         button[kind="header"] {
             display: block !important;
             visibility: visible !important;
@@ -97,46 +94,30 @@ elif st.session_state['page'] == 'auth':
         st.markdown("<h2 style='text-align: center;'>Secure Access</h2>", unsafe_allow_html=True)
         tab_login, tab_register = st.tabs(["Login", "Register"])
         
-        # --- LOGIN TAB ---
+        # --- LOGIN TAB UPDATE (DIRECT AUTH) ---
         with tab_login:
             st.markdown("### Welcome Back")
             with st.form("login_form"):
                 u_login = st.text_input("Username")
                 p_login = st.text_input("Password", type="password")
                 
-                # Button
                 if st.form_submit_button("Sign In", use_container_width=True):
                     if u_login and p_login:
-                        with st.spinner("Verifying credentials..."):
-                            try:
-                                API_URL = "https://rubaisha-finanalyze-api.hf.space"
-                                response = requests.post(
-                                    f"{API_URL}/login", 
-                                    json={"username": u_login, "password": p_login},
-                                    timeout=10 
-                                )
-                                
-                                if response.status_code == 200:
-                                    data = response.json()
-                                    st.toast(f"Welcome back, {data['user_data']['name']}!", icon="👋")
-                                    st.session_state['user'] = data['user_data'] 
-                                    st.session_state['page'] = 'dashboard'
-                                    st.rerun()
-                                else:
-                                    try:
-                                        err_msg = response.json().get("detail", "Login Failed")
-                                    except:
-                                        err_msg = "Invalid credentials"
-                                    st.error(f"❌ {err_msg}")
-                                    
-                            except requests.exceptions.ConnectionError:
-                                st.error("🔌 Service Unavailable. Please try again later.")
-                            except Exception as e:
-                                st.error("⚠️ An unexpected error occurred. Please contact support.")
+                        with st.spinner("Verifying..."):
+                            # 🚨 DIRECT AUTHENTICATION (NO API)
+                            user_data = login_user(u_login, p_login)
+                            
+                            if user_data:
+                                st.toast(f"Welcome back, {user_data['name']}!", icon="👋")
+                                st.session_state['user'] = user_data 
+                                st.session_state['page'] = 'dashboard'
+                                st.rerun()
+                            else:
+                                st.error("❌ Invalid username or password or Database not initialized.")
                     else:
                         st.warning("Please enter both username and password.")
 
-        # --- REGISTER TAB (FULL LOGIC PRESERVED) ---
+        # --- REGISTER TAB ---
         with tab_register:
             if 'signup_step' not in st.session_state: st.session_state.signup_step = 1
             if 'signup_data' not in st.session_state: st.session_state.signup_data = {}
@@ -153,7 +134,7 @@ elif st.session_state['page'] == 'auth':
                     new_img = st.file_uploader("Profile Picture", type=['jpg', 'png', 'jpeg'])
                     if st.form_submit_button("Verify & Continue", use_container_width=True):
                         if new_user and new_email and new_pass:
-                            from auth import validate_email, send_email_otp
+                            from auth import send_email_otp
                             img_storage = None
                             if new_img is not None:
                                 try:
@@ -173,13 +154,11 @@ elif st.session_state['page'] == 'auth':
                 otp_check = st.text_input("Enter Code")
                 if st.button("Complete Registration", use_container_width=True):
                     if otp_check == st.session_state.signup_otp:
-                        from auth import create_user
                         d = st.session_state.signup_data
                         result = create_user(d['u'], d['e'], d['ph'], d['p'], d['n'], d['img'])
                         if result == True:
-                            st.success("Account Created.")
+                            st.success("Account Created. Now go to Login tab.")
                             st.session_state.signup_step = 1
-                            st.session_state.signup_data = {}
                         else:
                             st.error(f"Failed: {result}")
                     else:
@@ -188,120 +167,30 @@ elif st.session_state['page'] == 'auth':
                     st.session_state.signup_step = 1
                     st.rerun()
 
-# 3. LOGGED IN USER (UPDATED SECTION)
+# 3. LOGGED IN USER
 elif st.session_state['user']:
     user = st.session_state['user']
-
-    # --- 1. DETERMINE MENU BASED ON ROLE ---
-    if user.get('role') == 'admin':
-        # Admin gets specialized menu
-        menu_options = ["Admin Panel", "Edit Profile"]
-        # Default index handling if needed (Streamlit handles it by name match usually)
-    else:
-        # Standard User Menu
-        menu_options = ["Analysis Hub", "Edit Profile", "FinBot AI"]
-
-    # --- 2. SIDEBAR WITH IMAGE FIX ---
     with st.sidebar:
-        # Image Logic
         img_to_show = "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"
-        
         if user.get('pic'):
             full_path = os.path.join(ROOT_DIR, user['pic'])
             if os.path.exists(full_path):
                 img_to_show = Image.open(full_path)
         
-        # ✅ FIX: Increased width to prevent blur
         st.image(img_to_show, width=150)
-        
         st.title(f"Hello, {user['name']}")
-        st.caption(f"Role: {user['role'].upper()}")
-        
-        st.divider()
-        
-        # Dynamic Menu based on Role
-        menu = st.radio("Navigate", menu_options)
-
-        st.divider()
-        # LOGOUT BUTTON
+        menu = st.radio("Navigate", ["Analysis Hub", "Edit Profile", "FinBot AI"] if user['role'] != 'admin' else ["Admin Panel", "Edit Profile"])
         if st.button("Logout", icon="🔒"):
             st.session_state['user'] = None
             st.session_state['page'] = 'landing'
             st.rerun()
 
-    # --- PAGE ROUTING ---
-    if menu == "Analysis Hub":
-        show_dashboard(user)
-        
-    elif menu == "Edit Profile":
-        st.title("Profile Settings")
-        
-        # Tabs
-        tab1, tab2 = st.tabs(["📝 Personal Info", "🔒 Security & Password"])
-        
-        # --- TAB 1: PERSONAL INFO ---
-        with tab1:
-            with st.form("edit_profile_form"):
-                nn = st.text_input("Full Name", value=user['name'])
-                nph = st.text_input("Phone", value=user.get('phone', ''), max_chars=11)
-                nimg = st.file_uploader("Update Picture", type=['jpg', 'png', 'jpeg'])
-                if st.form_submit_button("Save Profile Changes", type="primary"):
-                    update_user_profile(user['id'], nn, nph, nimg)
-                    st.success("Profile Updated Successfully!")
-                    # Session state update so that name changes immediately
-                    st.session_state['user']['name'] = nn
-                    st.session_state['user']['phone'] = nph
-                    st.rerun()
-                    
-        # --- TAB 2: CHANGE PASSWORD ---
-        with tab2:
-            st.markdown("#### Change Your Password")
-            st.caption("If your Admin gave you a default password (e.g., 123456), please change it immediately for security.")
-            
-            with st.form("change_password_form"):
-                curr_pw = st.text_input("Current Password", type="password")
-                new_pw = st.text_input("New Password", type="password")
-                conf_pw = st.text_input("Confirm New Password", type="password")
-                
-                if st.form_submit_button("Update Password", type="primary"):
-                    if not curr_pw or not new_pw or not conf_pw:
-                        st.warning("⚠️ Please fill in all password fields.")
-                    elif new_pw != conf_pw:
-                        st.error("❌ New passwords do not match!")
-                    elif len(new_pw) < 6:
-                        st.error("❌ New password must be at least 6 characters long.")
-                    else:
-                        with st.spinner("Updating password securely..."):
-                            try:
-                                import requests
-                                API_URL = "http://127.0.0.1:8000"
-                                res = requests.post(
-                                    f"{API_URL}/change-password",
-                                    json={
-                                        "user_id": user['id'],
-                                        "current_password": curr_pw,
-                                        "new_password": new_pw
-                                    }
-                                )
-                                if res.status_code == 200:
-                                    st.success("✅ Password updated successfully! Next time, log in with your new password.")
-                                else:
-                                    err = res.json().get('detail', 'Update failed')
-                                    st.error(f"❌ {err}")
-                            except Exception as e:
-                                st.error("🔌 Backend server is unreachable.")
-        
-    elif menu == "FinBot AI":
-        show_chatbot()
-        
-    elif menu == "Admin Panel":
-        # Only accessible via menu logic if role is admin
-        show_admin_panel(user)
+    if menu == "Analysis Hub": show_dashboard(user)
+    elif menu == "Edit Profile": st.title("Profile Settings")
+    elif menu == "FinBot AI": show_chatbot()
+    elif menu == "Admin Panel": show_admin_panel(user)
 
 # 4. OTHER PAGES
 elif st.session_state['page'] == 'about': show_navbar(); show_about_page()
 elif st.session_state['page'] == 'contact': show_navbar(); show_contact_page()
 elif st.session_state['page'] == 'privacy': show_navbar(); show_privacy_page()
-elif st.session_state['page'] == 'terms': show_navbar(); show_terms_page()
-elif st.session_state['page'] == 'cookies': show_navbar(); show_cookies_page()
-elif st.session_state['page'] == 'demo': show_navbar(); show_demo_page()

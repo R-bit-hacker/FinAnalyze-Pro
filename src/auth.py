@@ -14,15 +14,9 @@ SENDER_EMAIL = "rubaisha1705@gmail.com"
 SENDER_PASSWORD = "eibe nkmf wozh edfw" 
 
 # --- 🛑 PATHS SETUP (DYNAMIC & FINAL FIX) ---
-# Ye logic check karegi ke hum 'src' ke andar hain ya bahar, aur sahi root folder dhoondegi
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-# Database aur Uploads hamesha Main Folder (Root) mein honge
 DB_PATH = os.path.join(base_dir, "users.db")
 REAL_UPLOAD_DIR = os.path.join(base_dir, "uploads")
-
-# Verification ke liye (Terminal mein nazar aayega)
-print(f"📂 Current DB Path: {DB_PATH}")
 
 # --- VALIDATION ---
 def validate_email(email): return re.match(r"[^@]+@[^@]+\.[^@]+", email)
@@ -49,7 +43,6 @@ def send_email_otp(to_email, subject="Verification Code"):
         server.quit()
         return otp, True
     except Exception as e:
-        print(f"Email Error: {e}")
         return otp, False
 
 # --- COMPATIBILITY WRAPPER ---
@@ -58,7 +51,6 @@ def run_query(query, params=(), commit=False):
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        # 🚨 FORCE TABLE CREATION: Is se 'no such table' kabhi nahi aayega
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,10 +72,18 @@ def run_query(query, params=(), commit=False):
         else:
             return cursor.fetchall()
     except Exception as e:
-        print(f"Query Error: {e}")
         return []
     finally:
         if 'conn' in locals(): conn.close()
+
+# --- LOGIN USER ---
+def login_user(username, password):
+    results = run_query("SELECT id, username, password, full_name, role, profile_pic FROM users WHERE username = ?", (username,))
+    if results:
+        uid, uname, hashed_pw, fname, role, pic = results[0]
+        if bcrypt.checkpw(password.encode('utf-8'), hashed_pw):
+            return {"id": uid, "name": fname, "username": uname, "role": role, "pic": pic}
+    return None
 
 # --- CREATE USER ---
 def create_user(username, email, phone, password, full_name, img_data, role='user'):
@@ -92,39 +92,20 @@ def create_user(username, email, phone, password, full_name, img_data, role='use
     
     if img_data:
         try:
-            if not os.path.exists(REAL_UPLOAD_DIR):
-                os.makedirs(REAL_UPLOAD_DIR)
-            
-            clean_name = "default.png"
-            if isinstance(img_data, dict):
-                clean_name = f"{username}_{img_data.get('name', 'profile.png')}".replace(" ", "_")
-                full_file_path = os.path.join(REAL_UPLOAD_DIR, clean_name)
-                with open(full_file_path, "wb") as f:
-                    f.write(img_data['data'])
-            else:
-                clean_name = f"{username}_{img_data.name}".replace(" ", "_")
-                full_file_path = os.path.join(REAL_UPLOAD_DIR, clean_name)
-                with open(full_file_path, "wb") as f: 
-                    f.write(img_data.getbuffer())
-            
+            if not os.path.exists(REAL_UPLOAD_DIR): os.makedirs(REAL_UPLOAD_DIR)
+            clean_name = f"{username}_{img_data.name if hasattr(img_data, 'name') else 'profile.png'}".replace(" ", "_")
+            full_file_path = os.path.join(REAL_UPLOAD_DIR, clean_name)
+            with open(full_file_path, "wb") as f: 
+                f.write(img_data.getbuffer() if hasattr(img_data, 'getbuffer') else img_data['data'])
             FINAL_IMAGE_PATH = f"uploads/{clean_name}"
-        except Exception as e:
-            print(f"Image Save Error: {e}")
+        except: pass
 
-    conn = None
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO users (username, email, phone_number, password, full_name, profile_pic, role, is_verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", 
-            (username, email, phone, hashed, full_name, FINAL_IMAGE_PATH, role, 1)
-        )
-        conn.commit()
-        return True
-    except Exception as e:
-        return f"Database Error: {str(e)}"
-    finally:
-        if conn: conn.close()
+    res = run_query(
+        "INSERT INTO users (username, email, phone_number, password, full_name, profile_pic, role, is_verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", 
+        (username, email, phone, hashed, full_name, FINAL_IMAGE_PATH, role, 1),
+        commit=True
+    )
+    return res
 
 def update_user_profile(uid, full_name, phone, img_file):
     query = "UPDATE users SET full_name = ?, phone_number = ? WHERE id = ?"
@@ -140,8 +121,5 @@ def update_user_profile(uid, full_name, phone, img_file):
             params = [full_name, phone, db_path, uid]
             if 'user' in st.session_state and st.session_state['user']:
                 st.session_state['user']['pic'] = db_path
-        except Exception: pass
+        except: pass
     run_query(query, tuple(params), commit=True)
-
-def login_user(u, p): pass
-def show_auth_page(): pass
