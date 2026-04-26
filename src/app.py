@@ -18,13 +18,13 @@ from legal_pages import show_terms_page, show_cookies_page
 from demo import show_demo_page
 from admin_panel import show_admin_panel
 
-# --- 🚀 DB INITIALIZATION ---
+# --- 🚀 DB INITIALIZATION (FIXED PATH) ---
 from init_db import init_db
-# Check if DB exists in current directory, if not, create it
-if not os.path.exists(os.path.join(os.getcwd(), "users.db")):
-    init_db()
-else:
-    # Optional: ensure tables are there without wiping data
+
+# Exact path dhoondne ke liye dynamic logic
+db_file = os.path.join(os.getcwd(), "users.db")
+
+if not os.path.exists(db_file):
     init_db()
 
 # --- CONFIG ---
