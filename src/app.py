@@ -18,6 +18,15 @@ from legal_pages import show_terms_page, show_cookies_page
 from demo import show_demo_page
 from admin_panel import show_admin_panel
 
+# --- 🚀 DB INITIALIZATION ---
+from init_db import init_db
+# Check if DB exists in current directory, if not, create it
+if not os.path.exists(os.path.join(os.getcwd(), "users.db")):
+    init_db()
+else:
+    # Optional: ensure tables are there without wiping data
+    init_db()
+
 # --- CONFIG ---
 st.set_page_config(
     page_title="FinAnalyze Pro", 

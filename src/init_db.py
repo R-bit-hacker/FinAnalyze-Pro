@@ -6,24 +6,16 @@ DB_NAME = "users.db"
 UPLOAD_DIR = "uploads"
 
 def init_db():
-    # 1. Cleanup old DB
-    if os.path.exists(DB_NAME):
-        try:
-            os.remove(DB_NAME)
-            print("🗑️ Old database removed.")
-        except PermissionError:
-            print("⚠️ Error: Close the app first (Ctrl+C in terminal).")
-            return
-    
+    # 1. Ensure UPLOAD_DIR exists
     if not os.path.exists(UPLOAD_DIR):
         os.makedirs(UPLOAD_DIR)
 
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     
-    # 2. Users Table
+    # 2. Users Table (IF NOT EXISTS added)
     c.execute('''
-        CREATE TABLE users (
+        CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             email TEXT UNIQUE NOT NULL,
@@ -36,9 +28,9 @@ def init_db():
         )
     ''')
 
-    # 3. NEW: Analysis History Table
+    # 3. Analysis History Table (IF NOT EXISTS added)
     c.execute('''
-        CREATE TABLE analysis_history (
+        CREATE TABLE IF NOT EXISTS analysis_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
             income REAL,
@@ -51,14 +43,17 @@ def init_db():
         )
     ''')
     
-    # 4. Super Admin
-    admin_pass = bcrypt.hashpw("admin123".encode('utf-8'), bcrypt.gensalt())
-    c.execute("INSERT INTO users (username, email, phone_number, password, full_name, role, is_verified) VALUES (?, ?, ?, ?, ?, ?, ?)", 
-              ("admin", "admin@finanalyze.com", "03001234567", admin_pass, "Super Administrator", "admin", 1))
+    # 4. Super Admin (Sirf tab insert hoga agar admin table khali ho)
+    c.execute("SELECT * FROM users WHERE username = 'admin'")
+    if not c.fetchone():
+        admin_pass = bcrypt.hashpw("admin123".encode('utf-8'), bcrypt.gensalt())
+        c.execute("INSERT INTO users (username, email, phone_number, password, full_name, role, is_verified) VALUES (?, ?, ?, ?, ?, ?, ?)", 
+                  ("admin", "admin@finanalyze.com", "03001234567", admin_pass, "Super Administrator", "admin", 1))
+        print("👤 Super Admin created.")
 
     conn.commit()
     conn.close()
-    print("✅ Database Initialized with History Table!")
+    print("✅ Database check complete (Tables are ready)!")
 
 if __name__ == "__main__":
     init_db()
