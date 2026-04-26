@@ -94,28 +94,106 @@ elif st.session_state['page'] == 'auth':
         st.markdown("<h2 style='text-align: center;'>Secure Access</h2>", unsafe_allow_html=True)
         tab_login, tab_register = st.tabs(["Login", "Register"])
         
-        # --- LOGIN TAB UPDATE (DIRECT AUTH) ---
+        # --- LOGIN TAB UPDATE (WITH FORGOT PASSWORD) ---
         with tab_login:
-            st.markdown("### Welcome Back")
-            with st.form("login_form"):
-                u_login = st.text_input("Username")
-                p_login = st.text_input("Password", type="password")
+            # Session state for Forgot Password flow
+            if 'forgot_step' not in st.session_state: 
+                st.session_state.forgot_step = 0
+            
+            # --- STATE 0: NORMAL LOGIN ---
+            if st.session_state.forgot_step == 0:
+                st.markdown("### Welcome Back")
+                with st.form("login_form"):
+                    u_login = st.text_input("Username")
+                    p_login = st.text_input("Password", type="password")
+                    
+                    if st.form_submit_button("Sign In", use_container_width=True):
+                        if u_login and p_login:
+                            with st.spinner("Verifying..."):
+                                user_data = login_user(u_login, p_login)
+                                if user_data:
+                                    st.toast(f"Welcome back, {user_data['name']}!", icon="👋")
+                                    st.session_state['user'] = user_data 
+                                    st.session_state['page'] = 'dashboard'
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Invalid username or password.")
+                        else:
+                            st.warning("Please enter both username and password.")
                 
-                if st.form_submit_button("Sign In", use_container_width=True):
-                    if u_login and p_login:
-                        with st.spinner("Verifying..."):
-                            # 🚨 DIRECT AUTHENTICATION (NO API)
-                            user_data = login_user(u_login, p_login)
-                            
-                            if user_data:
-                                st.toast(f"Welcome back, {user_data['name']}!", icon="👋")
-                                st.session_state['user'] = user_data 
-                                st.session_state['page'] = 'dashboard'
-                                st.rerun()
-                            else:
-                                st.error("❌ Invalid username or password or Database not initialized.")
-                    else:
-                        st.warning("Please enter both username and password.")
+                # Forgot Password Button (Form ke bahar)
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("Forgot Password?", key="forgot_btn"):
+                    st.session_state.forgot_step = 1
+                    st.rerun()
+
+            # --- STATE 1: ENTER EMAIL ---
+            elif st.session_state.forgot_step == 1:
+                st.markdown("### Reset Password")
+                st.caption("Enter your registered email address to receive a verification code.")
+                
+                reset_email = st.text_input("Email Address")
+                
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button("Send OTP", use_container_width=True, type="primary"):
+                        from auth import check_email_exists, send_email_otp
+                        if check_email_exists(reset_email):
+                            with st.spinner("Sending code..."):
+                                otp, sent = send_email_otp(reset_email, "Password Reset Code")
+                                if sent:
+                                    st.session_state.reset_email = reset_email
+                                    st.session_state.reset_otp = otp
+                                    st.session_state.forgot_step = 2
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Failed to send email. Check your internet or email config.")
+                        else:
+                            st.error("❌ This email is not registered with us.")
+                with c2:
+                    if st.button("Back to Login", use_container_width=True):
+                        st.session_state.forgot_step = 0
+                        st.rerun()
+
+            # --- STATE 2: VERIFY OTP ---
+            elif st.session_state.forgot_step == 2:
+                st.markdown("### Verify OTP")
+                st.info(f"Code sent to {st.session_state.reset_email}")
+                
+                entered_otp = st.text_input("Enter 4-digit Code")
+                
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button("Verify Code", use_container_width=True, type="primary"):
+                        if entered_otp == st.session_state.reset_otp:
+                            st.session_state.forgot_step = 3
+                            st.rerun()
+                        else:
+                            st.error("❌ Invalid Code. Please try again.")
+                with c2:
+                    if st.button("Cancel", use_container_width=True):
+                        st.session_state.forgot_step = 0
+                        st.rerun()
+
+            # --- STATE 3: SET NEW PASSWORD ---
+            elif st.session_state.forgot_step == 3:
+                st.markdown("### Create New Password")
+                
+                with st.form("new_password_form"):
+                    new_pw = st.text_input("New Password", type="password")
+                    conf_pw = st.text_input("Confirm New Password", type="password")
+                    
+                    if st.form_submit_button("Save New Password", use_container_width=True):
+                        if len(new_pw) < 6:
+                            st.warning("Password must be at least 6 characters long.")
+                        elif new_pw != conf_pw:
+                            st.error("❌ Passwords do not match!")
+                        else:
+                            from auth import reset_user_password
+                            reset_user_password(st.session_state.reset_email, new_pw)
+                            st.success("✅ Password reset successfully! Please login with your new password.")
+                            st.session_state.forgot_step = 0
+                            st.rerun()
 
         # --- REGISTER TAB ---
         with tab_register:
@@ -186,7 +264,59 @@ elif st.session_state['user']:
             st.rerun()
 
     if menu == "Analysis Hub": show_dashboard(user)
-    elif menu == "Edit Profile": st.title("Profile Settings")
+    elif menu == "Edit Profile": 
+        st.title("Profile Settings")
+        
+        # Tabs Create Karein (Aapki images ke mutabiq)
+        tab_personal, tab_security = st.tabs(["📝 Personal Info", "🔒 Security & Password"])
+        
+        # --- TAB 1: PERSONAL INFO ---
+        with tab_personal:
+            with st.form("edit_profile_form"):
+                new_name = st.text_input("Full Name", value=user.get('name', ''))
+                new_phone = st.text_input("Phone", value=user.get('phone', ''))
+                new_pic = st.file_uploader("Update Picture", type=['jpg', 'png', 'jpeg'], help="Drag and drop file here. Limit 200MB per file - JPG, PNG, JPEG")
+                
+                if st.form_submit_button("Save Profile Changes", type="primary"):
+                    from auth import update_user_profile
+                    
+                    # Agar nayi picture upload hui hai toh data prepare karein
+                    img_data = None
+                    if new_pic is not None:
+                        img_data = {"name": new_pic.name, "data": new_pic.getvalue()}
+                        
+                    # Profile update function call karein
+                    update_user_profile(user['id'], user['username'], new_name, new_phone, img_data)
+                    st.success("✅ Profile Updated Successfully! Please logout and login again to see the changes.")
+
+        # --- TAB 2: SECURITY & PASSWORD ---
+        with tab_security:
+            st.markdown("### Change Your Password")
+            st.caption("If your Admin gave you a default password (e.g., 123456), please change it immediately for security.")
+            
+            with st.form("edit_password_form"):
+                current_pw = st.text_input("Current Password", type="password")
+                new_pw = st.text_input("New Password", type="password")
+                confirm_pw = st.text_input("Confirm New Password", type="password")
+                
+                if st.form_submit_button("Update Password", type="primary"):
+                    if not current_pw or not new_pw or not confirm_pw:
+                        st.warning("⚠️ Please fill in all password fields.")
+                    elif new_pw != confirm_pw:
+                        st.error("❌ New passwords do not match!")
+                    elif len(new_pw) < 6:
+                        st.error("❌ Password must be at least 6 characters long.")
+                    else:
+                        from auth import update_user_password
+                        res = update_user_password(user['username'], current_pw, new_pw)
+                        
+                        if res == True:
+                            st.success("✅ Password Updated Successfully! Please login again with your new password.")
+                            # Security feature: Password change ke baad session expire kar dein
+                            st.session_state['user'] = None 
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {res}")
     elif menu == "FinBot AI": show_chatbot()
     elif menu == "Admin Panel": show_admin_panel(user)
 
@@ -194,3 +324,4 @@ elif st.session_state['user']:
 elif st.session_state['page'] == 'about': show_navbar(); show_about_page()
 elif st.session_state['page'] == 'contact': show_navbar(); show_contact_page()
 elif st.session_state['page'] == 'privacy': show_navbar(); show_privacy_page()
+elif st.session_state['page'] == 'demo': show_navbar(); show_demo_page()

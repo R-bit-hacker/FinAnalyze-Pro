@@ -2,8 +2,10 @@ import sqlite3
 import bcrypt
 import os
 
-DB_NAME = "users.db"
-UPLOAD_DIR = "uploads"
+# Absolute path 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_NAME = os.path.join(BASE_DIR, "users.db")
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 
 def init_db():
     # 1. Ensure UPLOAD_DIR exists

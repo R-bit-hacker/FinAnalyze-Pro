@@ -52,6 +52,7 @@ def show_dashboard(user):
             st.markdown("<br>", unsafe_allow_html=True)
             
             # --- 🚀 DIRECT ML ANALYSIS (FIXED) ---
+            # --- 🚀 DIRECT ML ANALYSIS (FIXED) ---
             if st.button("RUN ANALYSIS", type="primary"):
                 with st.spinner("AI Engine is analyzing your data..."):
                     try:
@@ -61,28 +62,50 @@ def show_dashboard(user):
                         if kmeans is None or scaler is None:
                             st.error("AI Models not found.")
                         else:
-                            # 2. Prepare Data for Prediction
-                            # Humein wahi features dene hain jo model training ke waqt diye thay
-                            # Based on your input: inc, exp, sav, dbt, needs, wants
-                            features = np.array([[inc, exp, sav, dbt, needs, wants, 0, 0, 0, 0]])
+                            # 2. Calculate Missing Ratios (Training data ke format ke mutabiq)
+                            savings_rate = sav / inc if inc > 0 else 0
+                            debt_to_income_ratio = dbt / inc if inc > 0 else 0
+                            expense_ratio = exp / inc if inc > 0 else 0
+                            lifestyle_ratio = wants / (needs + 1)
+
+                            # 3. Prepare Data for Prediction (Exact 10 features in correct order)
+                            features = np.array([[
+                                inc,                  # monthly_income
+                                exp,                  # monthly_expense_total
+                                savings_rate,         # savings_rate
+                                debt_to_income_ratio, # debt_to_income_ratio
+                                wants,                # discretionary_spending (wants)
+                                needs,                # essential_spending (needs)
+                                0,                    # investment_amount
+                                0,                    # transaction_count
+                                expense_ratio,        # expense_ratio
+                                lifestyle_ratio       # lifestyle_ratio
+                            ]])
                             
-                            # Scaling and PCA
+                            # 4. Scaling
                             scaled_data = scaler.transform(features)
-                            pca_data = pca.transform(scaled_data)
                             
-                            # Prediction
-                            cluster = int(kmeans.predict(pca_data)[0])
+                            # 🚨 5. FIX: Predict on scaled_data (10 features), NOT pca_data
+                            cluster = int(kmeans.predict(scaled_data)[0])
                             
-                            # Cluster to Persona Mapping (Standard for FinAnalyze)
-                            persona_map = {0: "Smart Saver", 1: "Wealth Builder", 2: "Big Spender", 3: "Budget Challenger"}
+                            # Cluster to Persona Mapping
+                            # Cluster to Persona Mapping
+                            persona_map = {
+                                0: "Budget Challenger",
+                                1: "Big Spender",
+                                2: "Wealth Builder",
+                                3: "Smart Saver"
+                            }
                             p_name = persona_map.get(cluster, "Balanced Spender")
+
+                            if cluster == 2 and expense_ratio >= 0.80:
+                                p_name = "Big Spender"
                             
                             # Get AI Advice
                             advice = get_ai_advice(p_name, inc, sav)
                             
                             # Save to Local DB (History)
                             save_analysis_to_db(user['id'], inc, exp, sav, dbt, p_name)
-                            #st.toast("Analysis Complete!")
 
                             # Update State
                             st.session_state['report'] = {
@@ -111,12 +134,22 @@ def show_dashboard(user):
             </div>
             """, unsafe_allow_html=True)
 
-            # Metrics display
+            # Metrics display (Glass Cards Styling)
             m1, m2, m3, m4 = st.columns(4)
-            with m1: st.metric("Income", f"{rep['inc']:,}")
-            with m2: st.metric("Savings", f"{rep['sav']:,}")
-            with m3: st.metric("Expenses", f"{rep['exp']:,}")
-            with m4: st.metric("Debt", f"{rep['dbt']:,}")
+            
+            # Helper function to generate identical glass cards
+            def metric_card(title, value, color="white"):
+                return f"""
+                <div class="glass-card" style="text-align:center; padding: 25px 15px; display: flex; flex-direction: column; justify-content: center; height: 100%;">
+                    <p style="color:#888; font-size:0.85rem; margin-bottom:10px; text-transform: uppercase; letter-spacing: 1px;">{title}</p>
+                    <h2 style="color:{color}; margin:0; font-weight: 700; font-size: 1.8rem;">{value:,}</h2>
+                </div>
+                """
+
+            with m1: st.markdown(metric_card("Income", rep['inc'], "white"), unsafe_allow_html=True)
+            with m2: st.markdown(metric_card("Savings", rep['sav'], COLOR_SAVINGS), unsafe_allow_html=True)
+            with m3: st.markdown(metric_card("Expenses", rep['exp'], COLOR_EXPENSE), unsafe_allow_html=True)
+            with m4: st.markdown(metric_card("Debt", rep['dbt'], COLOR_DEBT), unsafe_allow_html=True)
 
             # Charts and Advice display (Functionality preserved)
             c1, c2 = st.columns(2)
@@ -129,15 +162,61 @@ def show_dashboard(user):
                 fig_donut = px.pie(names=['Needs', 'Wants', 'Savings', 'Debt'], values=[rep['needs'], rep['wants'], rep['sav'], rep['dbt']], hole=0.6)
                 st.plotly_chart(fig_donut, use_container_width=True)
 
-            st.subheader("Strategic Recommendations")
+            st.markdown("<h3 style='margin-top: 30px; margin-bottom: 20px;'>Strategic Recommendations</h3>", unsafe_allow_html=True)
             for advice in rep['advice']:
-                st.info(advice)
+                # Custom Glass Card for Recommendations (Matching Image 2)
+                st.markdown(f"""
+                <div style="background: rgba(20, 20, 30, 0.6); border: 1px solid rgba(119, 93, 208, 0.3); border-radius: 15px; padding: 18px 25px; margin-bottom: 15px; display: flex; align-items: center; gap: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); transition: transform 0.2s;">
+                    <div style="display: flex; align-items: center; justify-content: center; opacity: 0.9;">
+                        {get_icon('bulb', COLOR_SAVINGS, 22)}
+                    </div>
+                    <div style="color: #e0e0e0; font-size: 0.95rem; font-weight: 300; letter-spacing: 0.3px;">
+                        {advice}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
-    # === TAB 2: HISTORY ===
+   # === TAB 2: HISTORY ===
     with tab_hist:
         history_data = get_user_history(user['id'])
         if history_data:
+            # Dataframe banayein
             df_hist = pd.DataFrame(history_data, columns=['Income', 'Expense', 'Savings', 'Debt', 'Persona', 'Date'])
+            
+            # 1. Date ko proper time format mein convert karein aur sort karein taake chart theek se bane
+            df_hist['Date'] = pd.to_datetime(df_hist['Date'])
+            df_hist = df_hist.sort_values(by='Date')
+
+            # 2. Pehle Table show karein
+            st.markdown("### 🕒 Transaction Log")
             st.dataframe(df_hist, use_container_width=True, hide_index=True)
+
+            # 3. Phir "Savings Trajectory" Chart banayein
+            st.markdown("<br>### 📈 Savings Trajectory", unsafe_allow_html=True)
+            
+            # Plotly Express Area Chart
+            fig_trajectory = px.area(
+                df_hist, 
+                x='Date', 
+                y='Savings', 
+                markers=True,
+                color_discrete_sequence=[COLOR_SAVINGS] # Purple color jo aapki theme ka hissa hai
+            )
+            
+            # Chart ko Dark Theme ke hisaab se style karein (jaise aapki image mein hai)
+            fig_trajectory.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='#aaa'),
+                xaxis_title="Date",
+                yaxis_title="Savings",
+                margin=dict(l=0, r=0, t=30, b=0)
+            )
+            fig_trajectory.update_xaxes(showgrid=False)
+            fig_trajectory.update_yaxes(showgrid=True, gridcolor='rgba(255,255,255,0.1)')
+            
+            # Chart ko Streamlit par render karein
+            st.plotly_chart(fig_trajectory, use_container_width=True)
+            
         else:
             st.info("No history found.")

@@ -86,13 +86,23 @@ def show_admin_panel(user):
 
         # 1. Process Deletes
         for row_idx in changes.get("deleted_rows", []):
-            user_id = int(df.iloc[row_idx]['id'])
-            payload["deleted"].append(user_id)
+            target_user = df.iloc[row_idx]
+            # CHECK: Agar delete hone wala user admin hai toh rok do!
+            if target_user['role'] == 'admin':
+                st.error(f"⛔ Security Alert: You cannot delete an Admin account ({target_user['username']}).")
+                return # Execution yahin stop ho jayegi
+                
+            payload["deleted"].append(int(target_user['id']))
 
         # 2. Process Edits
         for row_idx, edits in changes.get("edited_rows", {}).items():
-            user_id = int(df.iloc[int(row_idx)]['id'])
-            edit_obj = {"id": user_id}
+            target_user = df.iloc[int(row_idx)]
+            # CHECK: Agar edit hone wala user pehle se admin hai toh rok do!
+            if target_user['role'] == 'admin':
+                st.error(f"⛔ Security Alert: You cannot modify an existing Admin account ({target_user['username']}). Admins must use their 'Edit Profile' section.")
+                return # Execution yahin stop ho jayegi
+            
+            edit_obj = {"id": int(target_user['id'])}
             if "username" in edits: edit_obj["username"] = edits["username"]
             if "name" in edits: edit_obj["name"] = edits["name"]
             if "email" in edits: edit_obj["email"] = edits["email"]

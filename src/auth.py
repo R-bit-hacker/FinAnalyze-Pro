@@ -75,11 +75,73 @@ def login_user(username, password):
 # --- CREATE USER ---
 def create_user(username, email, phone, password, full_name, img_data, role='user'):
     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-    # Database mein seedha insert karein
-    query = "INSERT INTO users (username, email, phone_number, password, full_name, role, is_verified) VALUES (?, ?, ?, ?, ?, ?, ?)"
-    params = (username, email, phone, hashed, full_name, role, 1)
+    
+    pic_path = ""
+    # Agar user ne picture upload ki hai, toh pehle usko save karein
+    if img_data and 'data' in img_data:
+        file_name = f"{username}_profile.png"
+        pic_path = os.path.join(REAL_UPLOAD_DIR, file_name)
+        try:
+            with open(pic_path, "wb") as f:
+                f.write(img_data['data'])
+            # Database mein save karne ke liye relative path use karein
+            pic_path = f"uploads/{file_name}"
+        except Exception as e:
+            print(f"Image save error: {e}")
+
+    # Database query mein profile_pic add karein
+    query = "INSERT INTO users (username, email, phone_number, password, full_name, profile_pic, role, is_verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    params = (username, email, phone, hashed, full_name, pic_path, role, 1)
+    
     return run_query(query, params, commit=True)
 
-def update_user_profile(uid, full_name, phone, img_file):
-    query = "UPDATE users SET full_name = ?, phone_number = ? WHERE id = ?"
-    run_query(query, (full_name, phone, uid), commit=True)
+# --- UPDATE PROFILE & PICTURE ---
+def update_user_profile(uid, username, full_name, phone, img_data=None):
+    if img_data and 'data' in img_data:
+        file_name = f"{username}_profile.png"
+        pic_path = os.path.join(REAL_UPLOAD_DIR, file_name)
+        try:
+            # File save karein
+            with open(pic_path, "wb") as f:
+                f.write(img_data['data'])
+            
+            # Database mein path aur baqi data update karein
+            rel_pic_path = f"uploads/{file_name}"
+            query = "UPDATE users SET full_name = ?, phone_number = ?, profile_pic = ? WHERE id = ?"
+            run_query(query, (full_name, phone, rel_pic_path, uid), commit=True)
+        except Exception as e:
+            print(f"Error saving updated image: {e}")
+    else:
+        # Agar picture upload nahi ki toh sirf text data update karein
+        query = "UPDATE users SET full_name = ?, phone_number = ? WHERE id = ?"
+        run_query(query, (full_name, phone, uid), commit=True)
+
+# --- UPDATE PASSWORD ---
+def update_user_password(username, current_password, new_password):
+    # 1. Pehle current password verify karein
+    results = run_query("SELECT password FROM users WHERE username = ?", (username,))
+    if results and len(results) > 0:
+        hashed_pw = results[0][0]
+        
+        # Kya purana password theek hai?
+        if bcrypt.checkpw(current_password.encode('utf-8'), hashed_pw):
+            # 2. Naya password hash karein aur DB mein save karein
+            new_hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
+            query = "UPDATE users SET password = ? WHERE username = ?"
+            run_query(query, (new_hashed, username), commit=True)
+            return True
+        else:
+            return "Incorrect current password."
+    return "User not found in database."
+
+    # --- CHECK IF EMAIL EXISTS ---
+def check_email_exists(email):
+    results = run_query("SELECT id FROM users WHERE email = ?", (email,))
+    return True if results and len(results) > 0 else False
+
+# --- FORGOT PASSWORD RESET ---
+def reset_user_password(email, new_password):
+    new_hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
+    query = "UPDATE users SET password = ? WHERE email = ?"
+    run_query(query, (new_hashed, email), commit=True)
+    return True
