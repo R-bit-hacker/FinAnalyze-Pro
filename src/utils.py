@@ -4,7 +4,7 @@ import os
 import streamlit.components.v1 as components
 
 # --- CONFIG ---
-GROQ_API_KEY = "your_key_here"
+GROQ_API_KEY = "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"
 
 # --- SMART PATH SYSTEM ---
 def get_paths():

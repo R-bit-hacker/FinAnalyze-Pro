@@ -100,7 +100,7 @@ elif st.session_state['page'] == 'auth':
                     if u_login and p_login:
                         with st.spinner("Verifying credentials..."):
                             try:
-                                API_URL = "http://127.0.0.1:8000"
+                                API_URL = "https://rubaisha-finanalyze-api.hf.space"
                                 response = requests.post(
                                     f"{API_URL}/login", 
                                     json={"username": u_login, "password": p_login},
