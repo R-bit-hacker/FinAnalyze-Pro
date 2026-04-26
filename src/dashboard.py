@@ -58,20 +58,20 @@ def show_dashboard(user):
                         # 1. Load Models
                         kmeans, scaler, pca = load_models()
                         
-                        if kmeans is None:
-                            st.error("Could not load AI models. Please check your models folder.")
+                        if kmeans is None or scaler is None:
+                            st.error("AI Models not found.")
                         else:
                             # 2. Prepare Data for Prediction
                             # Humein wahi features dene hain jo model training ke waqt diye thay
                             # Based on your input: inc, exp, sav, dbt, needs, wants
-                            input_data = np.array([[inc, exp, sav, dbt, needs, wants]])
+                            features = np.array([[inc, exp, sav, dbt, needs, wants, 0, 0, 0, 0]])
                             
                             # Scaling and PCA
-                            scaled_data = scaler.transform(input_data)
+                            scaled_data = scaler.transform(features)
                             pca_data = pca.transform(scaled_data)
                             
                             # Prediction
-                            cluster = kmeans.predict(pca_data)[0]
+                            cluster = int(kmeans.predict(pca_data)[0])
                             
                             # Cluster to Persona Mapping (Standard for FinAnalyze)
                             persona_map = {0: "Smart Saver", 1: "Wealth Builder", 2: "Big Spender", 3: "Budget Challenger"}
@@ -82,7 +82,7 @@ def show_dashboard(user):
                             
                             # Save to Local DB (History)
                             save_analysis_to_db(user['id'], inc, exp, sav, dbt, p_name)
-                            st.toast("Analysis Complete!")
+                            #st.toast("Analysis Complete!")
 
                             # Update State
                             st.session_state['report'] = {
@@ -93,7 +93,7 @@ def show_dashboard(user):
                             st.rerun()
                             
                     except Exception as e:
-                        st.error(f"Analysis Failed: {e}")
+                        st.error(f"Analysis failed: {str(e)}")
 
         else:
             # --- RESULTS VIEW (No changes here, remains working) ---
