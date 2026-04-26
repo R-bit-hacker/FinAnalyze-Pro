@@ -1,0 +1,5 @@
+Cluster,monthly_income,monthly_expense_total,savings_rate,discretionary_spending,essential_spending,debt_to_income_ratio,investment_amount,User_Count
+0,4232.91,2851.69,0.18,466.03,2236.15,0.4,474.84,246
+1,3455.11,3447.07,0.23,486.43,2197.03,0.34,397.3,236
+2,4148.46,2865.38,0.23,647.76,1944.88,0.32,429.16,184
+3,4232.73,2845.08,0.26,434.77,2368.95,0.33,319.36,278
