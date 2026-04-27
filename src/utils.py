@@ -184,6 +184,34 @@ def apply_styling():
             }
             .social-icon { transition: transform 0.2s; }
             .social-icon:hover { transform: scale(1.2); }
+        /* --- 📱 MOBILE RESPONSIVE FIXES --- */
+            @media screen and (max-width: 768px) {
+                /* Bari headings ko chota karein */
+                h1 { font-size: 2.2rem !important; line-height: 1.2 !important; }
+                h1.gradient-text { font-size: 2.5rem !important; }
+                h2 { font-size: 1.8rem !important; }
+                h3 { font-size: 1.4rem !important; }
+                
+                /* Glass cards ki width auto set karein taake overflow na ho */
+                .glass-card {
+                    width: 100% !important;
+                    min-width: 100% !important;
+                    height: auto !important;
+                    min-height: auto !important;
+                    padding: 20px !important;
+                    margin-bottom: 15px !important;
+                }
+
+                /* Footer ko stack karein */
+                div[style*="display: flex"] {
+                    flex-wrap: wrap !important;
+                }
+                
+                /* Metrics cards margin fix */
+                div[data-testid="stHorizontalBlock"] {
+                    gap: 10px !important;
+                }
+            }
         </style>
     """, unsafe_allow_html=True)
 

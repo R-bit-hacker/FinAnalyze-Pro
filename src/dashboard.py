@@ -37,84 +37,112 @@ def show_dashboard(user):
         if st.session_state.get('report') is None:
             st.markdown(f"#### {get_icon('edit', '#fff')} Enter Financial Data", unsafe_allow_html=True)
             
-            c1, c2 = st.columns(2)
-            inc = c1.number_input("Monthly Income (PKR)", 0, 10000000, 100000, step=5000)
-            exp = c2.number_input("Monthly Expenses (PKR)", 0, 10000000, 50000, step=5000)
-            
-            c3, c4 = st.columns(2)
-            sav = c3.number_input("Total Savings (PKR)", 0, 10000000, 20000, step=5000)
-            dbt = c4.number_input("Outstanding Debt (PKR)", 0, 10000000, 0, step=5000)
-            
-            st.markdown("<br><p style='color:#ccc;'>Spending Breakdown</p>", unsafe_allow_html=True)
-            needs = st.slider("Essentials (Rent, Food, Bills)", 0, int(inc) if inc>0 else 100000, int(inc*0.5))
-            wants = st.slider("Lifestyle (Shopping, Outings)", 0, int(inc) if inc>0 else 100000, int(inc*0.3))
-            
+            # --- 🚀 NEW FEATURE: INPUT METHOD SELECTION ---
+            input_method = st.radio("Choose Input Method:", ["📝 Manual Entry", "📁 Upload Bank Statement (CSV)"], horizontal=True)
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # --- 🚀 DIRECT ML ANALYSIS (FIXED) ---
-            # --- 🚀 DIRECT ML ANALYSIS (FIXED) ---
-            if st.button("RUN ANALYSIS", type="primary"):
+            # Variables initialize karein taake dono methods mein use ho sakein
+            inc = exp = sav = dbt = needs = wants = 0
+            ready_to_analyze = False
+            
+            # --- METHOD 1: MANUAL ENTRY (Aapka purana code) ---
+            if input_method == "📝 Manual Entry":
+                c1, c2 = st.columns(2)
+                inc = c1.number_input("Monthly Income (PKR)", 0, 10000000, 100000, step=5000)
+                exp = c2.number_input("Monthly Expenses (PKR)", 0, 10000000, 50000, step=5000)
+                
+                c3, c4 = st.columns(2)
+                sav = c3.number_input("Total Savings (PKR)", 0, 10000000, 20000, step=5000)
+                dbt = c4.number_input("Outstanding Debt (PKR)", 0, 10000000, 0, step=5000)
+                
+                st.markdown("<br><p style='color:#ccc;'>Spending Breakdown</p>", unsafe_allow_html=True)
+                needs = st.slider("Essentials (Rent, Food, Bills)", 0, int(inc) if inc>0 else 100000, int(inc*0.5))
+                wants = st.slider("Lifestyle (Shopping, Outings)", 0, int(inc) if inc>0 else 100000, int(inc*0.3))
+                
+                ready_to_analyze = st.button("RUN ANALYSIS", type="primary")
+
+            # --- METHOD 2: CSV UPLOAD ---
+            elif input_method == "📁 Upload Bank Statement (CSV)":
+                st.info("💡 Upload a CSV file with your monthly transactions. Required columns: 'Category' and 'Amount'. Valid Categories: Income, Need, Want, Savings, Debt.")
+                
+                uploaded_file = st.file_uploader("Upload your CSV", type=['csv'])
+                
+                if uploaded_file:
+                    try:
+                        df_csv = pd.read_csv(uploaded_file)
+                        st.success("File Processed Successfully! Here is your extracted data:")
+                        
+                        # Data processing logic
+                        # Convert headers to lowercase for safety
+                        df_csv.columns = df_csv.columns.str.lower()
+                        
+                        if 'category' in df_csv.columns and 'amount' in df_csv.columns:
+                            # Aggregate amounts by category
+                            grouped = df_csv.groupby(df_csv['category'].str.lower())['amount'].sum().to_dict()
+                            
+                            # Map to variables
+                            inc = grouped.get('income', 0)
+                            needs = grouped.get('need', 0)
+                            wants = grouped.get('want', 0)
+                            sav = grouped.get('savings', 0)
+                            dbt = grouped.get('debt', 0)
+                            
+                            # Total expense is needs + wants
+                            exp = needs + wants
+                            
+                            # Show extracted data in a clean way
+                            mc1, mc2, mc3 = st.columns(3)
+                            mc1.metric("Calculated Income", f"PKR {inc:,}")
+                            mc2.metric("Calculated Expense", f"PKR {exp:,}")
+                            mc3.metric("Calculated Savings", f"PKR {sav:,}")
+                            
+                            ready_to_analyze = st.button("ANALYZE FROM CSV", type="primary")
+                        else:
+                            st.error("❌ CSV must contain 'Category' and 'Amount' columns.")
+                    except Exception as e:
+                        st.error(f"❌ Error reading file: {e}")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # --- ML ANALYSIS BLOCK (Dono methods ke liye common) ---
+            if ready_to_analyze:
                 with st.spinner("AI Engine is analyzing your data..."):
                     try:
-                        # 1. Load Models
                         kmeans, scaler, pca = load_models()
-                        
                         if kmeans is None or scaler is None:
                             st.error("AI Models not found.")
                         else:
-                            # 2. Calculate Missing Ratios (Training data ke format ke mutabiq)
+                            # 2. Calculate Missing Ratios
                             savings_rate = sav / inc if inc > 0 else 0
                             debt_to_income_ratio = dbt / inc if inc > 0 else 0
                             expense_ratio = exp / inc if inc > 0 else 0
                             lifestyle_ratio = wants / (needs + 1)
 
-                            # 3. Prepare Data for Prediction (Exact 10 features in correct order)
-                            features = np.array([[
-                                inc,                  # monthly_income
-                                exp,                  # monthly_expense_total
-                                savings_rate,         # savings_rate
-                                debt_to_income_ratio, # debt_to_income_ratio
-                                wants,                # discretionary_spending (wants)
-                                needs,                # essential_spending (needs)
-                                0,                    # investment_amount
-                                0,                    # transaction_count
-                                expense_ratio,        # expense_ratio
-                                lifestyle_ratio       # lifestyle_ratio
-                            ]])
+                            # 3. Prepare Data for Prediction (10 features)
+                            features = np.array([[inc, exp, savings_rate, debt_to_income_ratio, wants, needs, 0, 0, expense_ratio, lifestyle_ratio]])
                             
                             # 4. Scaling
                             scaled_data = scaler.transform(features)
                             
-                            # 🚨 5. FIX: Predict on scaled_data (10 features), NOT pca_data
+                            # 5. Predict
                             cluster = int(kmeans.predict(scaled_data)[0])
                             
-                            # Cluster to Persona Mapping
-                            # Cluster to Persona Mapping
-                            persona_map = {
-                                0: "Budget Challenger",
-                                1: "Big Spender",
-                                2: "Wealth Builder",
-                                3: "Smart Saver"
-                            }
+                            # Mapping & Guardrail
+                            persona_map = {0: "Budget Challenger", 1: "Big Spender", 2: "Wealth Builder", 3: "Smart Saver"}
                             p_name = persona_map.get(cluster, "Balanced Spender")
-
                             if cluster == 2 and expense_ratio >= 0.80:
                                 p_name = "Big Spender"
                             
-                            # Get AI Advice
+                            # Finalize
                             advice = get_ai_advice(p_name, inc, sav)
-                            
-                            # Save to Local DB (History)
                             save_analysis_to_db(user['id'], inc, exp, sav, dbt, p_name)
 
-                            # Update State
                             st.session_state['report'] = {
                                 'inc': inc, 'exp': exp, 'sav': sav, 'dbt': dbt, 
                                 'persona': p_name, 'needs': needs, 'wants': wants, 
                                 'advice': advice
                             }
                             st.rerun()
-                            
                     except Exception as e:
                         st.error(f"Analysis failed: {str(e)}")
 
@@ -192,7 +220,7 @@ def show_dashboard(user):
             st.dataframe(df_hist, use_container_width=True, hide_index=True)
 
             # 3. Phir "Savings Trajectory" Chart banayein
-            st.markdown("<br>### 📈 Savings Trajectory", unsafe_allow_html=True)
+            st.markdown("### 📈 Savings Trajectory", unsafe_allow_html=True)
             
             # Plotly Express Area Chart
             fig_trajectory = px.area(
