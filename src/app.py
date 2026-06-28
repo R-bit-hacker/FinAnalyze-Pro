@@ -166,22 +166,22 @@ elif st.session_state['page'] == 'auth':
             if st.session_state.forgot_step == 0:
                 st.markdown("### Welcome Back")
                 with st.form("login_form"):
-                    u_login = st.text_input("Username").lower().strip()
+                    e_login = st.text_input("Email Address").lower().strip()
                     p_login = st.text_input("Password", type="password")
                     
                     if st.form_submit_button("Sign In", use_container_width=True):
-                        if u_login and p_login:
+                        if e_login and p_login:
                             with st.spinner("Verifying..."):
-                                user_data = login_user(u_login, p_login)
+                                user_data = login_user(e_login, p_login)
                                 if user_data:
                                     st.toast(f"Welcome back, {user_data['name']}!", icon="👋")
                                     st.session_state['user'] = user_data 
                                     st.session_state['page'] = 'dashboard'
                                     st.rerun()
                                 else:
-                                    st.error("❌ Invalid username or password.")
+                                    st.error("❌ Invalid email or password.")
                         else:
-                            st.warning("Please enter both username and password.")
+                            st.warning("Please enter both email and password.")
                 
                 # Forgot Password Button (Form ke bahar)
                 st.markdown("<br>", unsafe_allow_html=True)

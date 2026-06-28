@@ -67,11 +67,11 @@ def send_email_otp(to_email, subject="Verification Code"):
         return otp, False
 
 # --- LOGIN USER ---
-def login_user(username, password):
+def login_user(email, password):
     db = get_db()
     if not db: return None
     
-    docs = db.collection('users').where('username', '==', username).limit(1).stream()
+    docs = db.collection('users').where('email', '==', email).limit(1).stream()
     for doc in docs:
         user_data = doc.to_dict()
         hashed_pw = user_data.get('password') or user_data.get('password_hash')
