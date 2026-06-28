@@ -67,26 +67,33 @@ def send_email_otp(to_email, subject="Verification Code"):
         return otp, False
 
 # --- LOGIN USER ---
-def login_user(email, password):
+def login_user(username, password):
     db = get_db()
-    if not db: return None
+    if not db: return None, "Database connection error."
     
-    docs = db.collection('users').where('email', '==', email).limit(1).stream()
-    for doc in docs:
-        user_data = doc.to_dict()
-        hashed_pw = user_data.get('password') or user_data.get('password_hash')
+    docs = list(db.collection('users').where('username', '==', username).limit(1).stream())
+    if not docs:
+        return None, "❌ Username does not exist."
         
-        if hashed_pw:
-            db_hash_bytes = hashed_pw.encode('utf-8') if isinstance(hashed_pw, str) else hashed_pw
-            if bcrypt.checkpw(password.encode('utf-8'), db_hash_bytes):
-                return {
-                    "id": doc.id,
-                    "name": user_data.get('full_name', ''),
-                    "username": user_data.get('username', ''),
-                    "role": user_data.get('role', 'user'),
-                    "pic": user_data.get('profile_pic', '')
-                }
-    return None
+    doc = docs[0]
+    user_data = doc.to_dict()
+    hashed_pw = user_data.get('password') or user_data.get('password_hash')
+    
+    if hashed_pw:
+        db_hash_bytes = hashed_pw.encode('utf-8') if isinstance(hashed_pw, str) else hashed_pw
+        # Step 2: Authenticate using the hashed password (acting as the authentication method)
+        if bcrypt.checkpw(password.encode('utf-8'), db_hash_bytes):
+            return {
+                "id": doc.id,
+                "name": user_data.get('full_name', ''),
+                "username": user_data.get('username', ''),
+                "email": user_data.get('email', ''),
+                "role": user_data.get('role', 'user'),
+                "pic": user_data.get('profile_pic', '')
+            }, None
+        else:
+            return None, "❌ Incorrect Password."
+    return None, "❌ Authentication failed."
 
 # --- CREATE USER ---
 def create_user(username, email, phone, password, full_name, img_data, role='user'):
