@@ -34,11 +34,19 @@ if not os.path.exists(UPLOAD_FOLDER):
 # Initialize Firebase
 if not firebase_admin._apps:
     cred_path = os.path.join(ROOT_DIR, "firebase_credentials.json")
+    
+    if not os.path.exists(cred_path):
+        # If running on cloud, create the file from secrets
+        if "firebase_json" in st.secrets:
+            with open(cred_path, "w") as f:
+                f.write(st.secrets["firebase_json"])
+        else:
+            st.error("Firebase credentials not found in secrets or local directory.")
+            st.stop()
+            
     if os.path.exists(cred_path):
         cred = credentials.Certificate(cred_path)
         firebase_admin.initialize_app(cred)
-    else:
-        print("❌ Firebase credentials not found at:", cred_path)
 
 def get_db():
     if firebase_admin._apps:
