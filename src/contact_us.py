@@ -1,5 +1,7 @@
 import streamlit as st
 from utils import show_footer, get_icon, scroll_to_top
+import smtplib
+from email.mime.text import MIMEText
 
 def show_contact_page():
     # --- AUTO SCROLL TO TOP ---
@@ -38,13 +40,32 @@ def show_contact_page():
     with c2:
         st.markdown(f"<h3 style='margin-bottom: 20px;'>{get_icon('edit', '#fff')} Send a Message</h3>", unsafe_allow_html=True)
         with st.form("contact_form", clear_on_submit=True):
-            st.text_input("Name", placeholder="Your Name")
-            st.text_input("Email", placeholder="john@example.com")
-            st.text_area("Message", placeholder="How can we help you?", height=150)
+            name = st.text_input("Name", placeholder="Your Name")
+            email = st.text_input("Email", placeholder="john@example.com")
+            msg = st.text_area("Message", placeholder="How can we help you?", height=150)
             
             st.markdown("<br>", unsafe_allow_html=True)
             if st.form_submit_button("SEND MESSAGE", use_container_width=True):
-                st.toast("Message sent successfully!", icon="✅")
+                if not name.strip() or not email.strip() or not msg.strip():
+                    st.warning("Please fill out all fields.")
+                else:
+                    try:
+                        body = f"User Name: {name}\nUser Email: {email}\n\nMessage:\n{msg}"
+                        mime_msg = MIMEText(body)
+                        mime_msg['Subject'] = f"New Contact Message from {name}"
+                        mime_msg['From'] = st.secrets['email']['sender_email']
+                        mime_msg['To'] = st.secrets['email']['receiver_email']
+
+                        server = smtplib.SMTP('smtp.gmail.com', 587)
+                        server.starttls()
+                        server.login(st.secrets['email']['sender_email'], st.secrets['email']['sender_password'])
+                        server.send_message(mime_msg)
+                        server.quit()
+                        
+                        st.success("Message sent successfully!")
+                        st.balloons()
+                    except Exception as e:
+                        st.error(f"Failed to send email: {e}")
 
     st.markdown("<br><br><h3 style='text-align:center;'>Our Locations</h3><br>", unsafe_allow_html=True)
     o1, o2, o3 = st.columns(3)

@@ -1,6 +1,9 @@
 import streamlit as st
+import os
 from groq import Groq
-from utils import GROQ_API_KEY
+from dotenv import load_dotenv
+
+load_dotenv()
 
 def show_chatbot():
     st.title("FinBot Assistant")
@@ -34,7 +37,8 @@ def show_chatbot():
     if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
         with st.spinner("Analyzing financial data..."):
             try:
-                client = Groq(api_key=GROQ_API_KEY)
+                api_key = os.getenv('GROQ_API_KEY')
+                client = Groq(api_key=api_key)
                 
                 # Combine the strict system prompt with the chat history
                 api_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + st.session_state.messages

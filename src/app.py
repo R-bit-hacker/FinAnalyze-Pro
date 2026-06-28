@@ -4,9 +4,10 @@ import base64
 import pandas as pd
 import requests
 from PIL import Image
+import re
 
 # Import ROOT_DIR from utils to avoid hardcoding
-from utils import apply_styling, run_query, get_paths, ROOT_DIR
+from utils import apply_styling, get_paths, ROOT_DIR
 from auth import update_user_profile, login_user, create_user
 from dashboard import show_dashboard
 from chatbot import show_chatbot
@@ -21,10 +22,34 @@ from admin_panel import show_admin_panel
 # --- 🚀 DB INITIALIZATION (FIXED PATH) ---
 from init_db import init_db
 
-# Exact path dhoondne ke liye dynamic logic
-db_file = os.path.join(os.getcwd(), "users.db")
-if not os.path.exists(db_file):
-    init_db()
+# --- VALIDATION FUNCTIONS ---
+def is_valid_email(email):
+    pattern = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
+    return re.match(pattern, email) is not None
+
+def is_strong_password(password):
+    if len(password) < 8: return False, "Must be at least 8 characters long."
+    if not re.search(r"[A-Z]", password): return False, "Must contain at least one uppercase letter (A-Z)."
+    if not re.search(r"[a-z]", password): return False, "Must contain at least one lowercase letter (a-z)."
+    if not re.search(r"\d", password): return False, "Must contain at least one number (0-9)."
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password): return False, "Must contain at least one special character (e.g., @, #, $)."
+    return True, "Valid"
+
+def is_valid_image(uploaded_file):
+    if uploaded_file is None: 
+        return True, "No image"
+    try:
+        img = Image.open(uploaded_file)
+        width, height = img.size
+        if width < 150 or height < 150:
+            return False, f"Image is too small ({width}x{height}). Minimum resolution must be 150x150 pixels."
+        return True, "Valid"
+    except Exception as e:
+        return False, "Invalid file format."
+# -----------------------------
+
+# Initialize Firebase and Admin User
+init_db()
 
 # --- CONFIG ---
 st.set_page_config(
@@ -78,10 +103,47 @@ def show_navbar():
     
     st.markdown("---")
 
+
+
+def render_privacy_policy():
+    if st.button("Return to Application", key="back_from_privacy"):
+        st.session_state['page'] = 'landing' if st.session_state.get('user') is None else 'dashboard'
+        st.rerun()
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.title("Privacy Policy")
+    st.markdown('''**Effective Date: June 2026**\n\n**1. Data Collection and Zero-Storage Architecture**\nFinAnalyze employs an ephemeral data processing model. Financial statements (PDF/CSV) uploaded to the platform are parsed in-memory strictly for real-time analysis. We do not persistently store raw transaction logs, bank account numbers, or routing details on our servers. Upon session termination, all uploaded artifacts are immediately purged.\n\n**2. Artificial Intelligence and Third-Party APIs**\nTo facilitate advanced financial profiling, we utilize secure external APIs. Only anonymized, aggregated numerical parameters are transmitted for processing. No Personally Identifiable Information (PII) is utilized for training third-party machine learning models.\n\n**3. Cryptographic Security**\nUser authentication is secured via industry-standard hashing protocols (Bcrypt). Platform administrators do not have access to plaintext user passwords.\n\n**4. Data Retention and User Rights**\nUsers retain full control over their historical analysis logs and may request complete account deletion via our Support channels at any time.''')
+
+def render_terms():
+    if st.button("Return to Application", key="back_from_terms"):
+        st.session_state['page'] = 'landing' if st.session_state.get('user') is None else 'dashboard'
+        st.rerun()
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.title("Terms of Service")
+    st.markdown('''**Effective Date: June 2026**\n\n**1. Acceptance of Terms**\nBy accessing the FinAnalyze platform, you agree to be bound by these Terms of Service. This platform is designed strictly for educational and analytical modeling.\n\n**2. Nature of Service and Limitations**\nFinAnalyze utilizes K-Means clustering and predictive algorithms to simulate financial trajectories. These outputs are automated estimations and do not constitute certified financial, tax, or investment advice. Users should consult registered financial advisors before making critical financial decisions.\n\n**3. User Obligations**\nUsers are required to ensure that uploaded documents are appropriately redacted. Do not upload documents containing highly sensitive, unredacted credentials during this prototype phase. You are responsible for maintaining the confidentiality of your authentication credentials.\n\n**4. Limitation of Liability**\nWhile we strive for high analytical accuracy, financial markets are subject to volatility. FinAnalyze and its developers hold no liability for financial losses or discrepancies arising from reliance on the platform's automated projections.''')
+
+def render_cookie():
+    if st.button("Return to Application", key="back_from_cookie"):
+        st.session_state['page'] = 'landing' if st.session_state.get('user') is None else 'dashboard'
+        st.rerun()
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.title("Cookie and Session Policy")
+    st.markdown('''**1. Session State Management**\nFinAnalyze does not utilize traditional tracking cookies. Instead, we rely on native framework session states to maintain secure authentication and seamless navigation across the dashboard modules.\n\n**2. Essential Functionality**\nThese session states are strictly necessary. They preserve user interface preferences (such as theme selection) and temporarily retain analytical inputs to prevent data loss during module transitions.\n\n**3. Exclusivity of Tracking**\nWe do not deploy marketing pixels, third-party analytics trackers, or cross-site tracking mechanisms. User session data is confined entirely to the active application lifecycle and is not monetized or shared with external advertising entities.''')
+
 # --- ROUTING LOGIC ---
 
+
+
+# 0. OTHER PAGES (Highest Priority to avoid shadowing)
+if st.session_state['page'] == 'about': show_navbar(); show_about_page()
+elif st.session_state['page'] == 'contact': show_navbar(); show_contact_page()
+elif st.session_state['page'] == 'demo': show_navbar(); show_demo_page()
+elif st.session_state['page'] == 'privacy': render_privacy_policy()
+elif st.session_state['page'] == 'terms': render_terms()
+elif st.session_state['page'] == 'cookie': render_cookie()
+
 # 1. LANDING PAGE
-if st.session_state['page'] == 'landing':
+elif st.session_state['page'] == 'landing':
+
     show_navbar()
     show_landing_page() 
 
@@ -211,20 +273,48 @@ elif st.session_state['page'] == 'auth':
                     new_pass = st.text_input("Password", type="password")
                     new_img = st.file_uploader("Profile Picture", type=['jpg', 'png', 'jpeg'])
                     if st.form_submit_button("Verify & Continue", use_container_width=True):
-                        if new_user and new_email and new_pass:
-                            from auth import send_email_otp
-                            img_storage = None
-                            if new_img is not None:
-                                try:
-                                    img_storage = {"name": new_img.name, "type": new_img.type, "data": new_img.getvalue()}
-                                except: pass
-                            otp, sent = send_email_otp(new_email, "Verify Account")
-                            st.session_state.signup_otp = otp
-                            st.session_state.signup_data = {'u': new_user, 'e': new_email, 'ph': new_phone, 'p': new_pass, 'n': new_fullname, 'img': img_storage}
-                            st.session_state.signup_step = 2
-                            st.rerun()
+                        # 0. Missing Field Check
+                        if not (new_user and new_email and new_pass):
+                            st.error("❌ Required fields missing. Username, Email, and Password are mandatory.")
+                        
+                        # 1. Email Check
+                        elif not is_valid_email(new_email):
+                            st.error("❌ Invalid Email! Please enter a valid email format (e.g., ali@gmail.com).")
+                            
+                        # 2. Password Check
                         else:
-                            st.error("Required fields missing")
+                            is_valid_pass, pass_msg = is_strong_password(new_pass)
+                            if not is_valid_pass:
+                                st.error(f"❌ Weak Password: {pass_msg}")
+                                
+                            # 3. Profile Picture Check
+                            else:
+                                is_valid_img = True
+                                img_msg = ""
+                                if new_img is not None:
+                                    is_valid_img, img_msg = is_valid_image(new_img)
+                                    
+                                if not is_valid_img:
+                                    st.error(f"❌ Invalid Profile Picture: {img_msg}")
+                                    
+                                # 4. Agar sab theek hai toh asli kaam karein
+                                else:
+                                    from auth import send_email_otp
+                                    img_storage = None
+                                    if new_img is not None:
+                                        try:
+                                            img_storage = {"name": new_img.name, "type": new_img.type, "data": new_img.getvalue()}
+                                        except: pass
+                                    
+                                    with st.spinner("Sending code..."):
+                                        otp, sent = send_email_otp(new_email, "Verify Account")
+                                        if sent:
+                                            st.session_state.signup_otp = otp
+                                            st.session_state.signup_data = {'u': new_user, 'e': new_email, 'ph': new_phone, 'p': new_pass, 'n': new_fullname, 'img': img_storage}
+                                            st.session_state.signup_step = 2
+                                            st.rerun()
+                                        else:
+                                            st.error("❌ Failed to send OTP. Check internet connection.")
 
             elif st.session_state.signup_step == 2:
                 st.markdown("### Verify Email")

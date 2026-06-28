@@ -1,6 +1,5 @@
 import sys
 import os
-import sqlite3
 import bcrypt
 import pandas as pd
 from fastapi import FastAPI, HTTPException
@@ -15,11 +14,9 @@ sys.path.append(src_dir)
 # ---------------------------------------------------
 
 from ml_logic import load_models, get_ai_advice
+from utils import get_db
 
 app = FastAPI(title="FinAnalyze Pro API", version="2.5")
-
-# --- DATABASE PATH ---
-DB_PATH = os.path.join(root_dir, "users.db")
 
 # --- LOAD MODELS ON STARTUP ---
 try:
@@ -28,15 +25,6 @@ try:
 except Exception as e:
     print(f"⚠️ ML Models failed to load: {e}")
     kmeans, scaler, pca = None, None, None
-
-def get_db_connection():
-    if os.path.exists(DB_PATH):
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row 
-        return conn
-    else:
-        print(f"❌ Looking for DB at: {DB_PATH}")
-        raise Exception("Database file missing!")
 
 # --- DATA MODELS (EXISTING) ---
 class LoginRequest(BaseModel):
@@ -53,7 +41,7 @@ class AnalysisRequest(BaseModel):
 
 # --- NEW DATA MODELS FOR BATCH CRUD ---
 class UserUpdate(BaseModel):
-    id: int
+    id: str
     username: Optional[str] = None
     name: Optional[str] = None
     role: Optional[str] = None
@@ -70,10 +58,10 @@ class UserCreateAdmin(BaseModel):
 class BatchUpdateRequest(BaseModel):
     added: List[UserCreateAdmin] = []
     edited: List[UserUpdate] = []
-    deleted: List[int] = []
+    deleted: List[str] = []
 
 class PasswordChangeRequest(BaseModel):
-    user_id: int
+    user_id: str
     current_password: str
     new_password: str
 
@@ -84,26 +72,23 @@ def home():
 
 @app.post("/login")
 def login_user(request: LoginRequest):
-    conn = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        db = get_db()
+        if not db:
+            raise HTTPException(status_code=500, detail="Database connection failed")
+            
+        docs = db.collection('users').where('username', '==', request.username).limit(1).stream()
+        doc = next(docs, None)
         
-        try:
-             cursor.execute("SELECT id, username, role, password, full_name, profile_pic, phone_number FROM users WHERE username = ?", (request.username,))
-        except:
-             cursor.execute("SELECT id, username, role, password_hash, full_name, profile_pic, phone_number FROM users WHERE username = ?", (request.username,))
-             
-        user = cursor.fetchone()
-        
-        if user:
-            user_id = user[0]
-            db_username = user[1]
-            db_role = user[2]
-            db_password_hash = user[3]
-            db_fullname = user[4]
-            db_pic = user[5]
-            db_phone = user[6]
+        if doc:
+            user = doc.to_dict()
+            user_id = doc.id
+            db_username = user.get('username')
+            db_role = user.get('role', 'user')
+            db_password_hash = user.get('password') or user.get('password_hash')
+            db_fullname = user.get('full_name')
+            db_pic = user.get('profile_pic')
+            db_phone = user.get('phone_number')
             
             user_input_bytes = request.password.encode('utf-8')
             if isinstance(db_password_hash, str):
@@ -128,8 +113,6 @@ def login_user(request: LoginRequest):
     except Exception as e:
         print(f"Login Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if conn: conn.close()
 
 @app.post("/predict")
 def predict_persona(data: AnalysisRequest):
@@ -191,143 +174,136 @@ def predict_persona(data: AnalysisRequest):
 
 @app.get("/get-all-users")
 def get_all_users():
-    conn = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, username, full_name, role, phone_number, email, profile_pic FROM users")
-        users = cursor.fetchall()
+        db = get_db()
+        if not db:
+            raise HTTPException(status_code=500, detail="Database connection failed")
+            
+        docs = db.collection('users').stream()
         
         user_list = []
-        for u in users:
+        for doc in docs:
+            u = doc.to_dict()
             user_list.append({
-                "id": u[0],
-                "username": u[1],
-                "name": u[2] if u[2] else "N/A",
-                "role": u[3],
-                "phone": u[4] if u[4] else "N/A",
-                "email": u[5] if u[5] else "No Email",
-                "pic": u[5] if u[5] else ""
+                "id": doc.id,
+                "username": u.get('username', ''),
+                "name": u.get('full_name', 'N/A') or "N/A",
+                "role": u.get('role', 'user'),
+                "phone": u.get('phone_number', 'N/A') or "N/A",
+                "email": u.get('email', 'No Email') or "No Email",
+                "pic": u.get('profile_pic', '') or ""
             })
         return {"status": "success", "users": user_list}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if conn: conn.close()
 
 @app.delete("/delete-user/{user_id}")
-def delete_user(user_id: int):
-    conn = None
+def delete_user(user_id: str):
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT role FROM users WHERE id = ?", (user_id,))
-        user = cursor.fetchone()
+        db = get_db()
+        if not db:
+            raise HTTPException(status_code=500, detail="Database connection failed")
+            
+        doc_ref = db.collection('users').document(user_id)
+        doc = doc_ref.get()
         
-        if not user:
+        if not doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
-        if user[0] == 'admin':
+            
+        if doc.to_dict().get('role') == 'admin':
             raise HTTPException(status_code=400, detail="❌ Cannot delete an Admin account!")
             
-        cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
-        cursor.execute("DELETE FROM analysis_history WHERE user_id = ?", (user_id,))
-        conn.commit()
+        doc_ref.delete()
+        
+        # Delete analysis history
+        history_docs = db.collection('analysis_history').where('user_id', '==', user_id).stream()
+        for h_doc in history_docs:
+            h_doc.reference.delete()
+            
         return {"status": "success", "message": "User deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if conn: conn.close()
 
 # --- 🚀 NEW ADVANCED CRUD ROUTE FOR DATA EDITOR ---
 @app.post("/batch-update-users")
 def batch_update_users(request: BatchUpdateRequest):
-    conn = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
+        db = get_db()
+        if not db:
+            raise HTTPException(status_code=500, detail="Database connection failed")
+            
+        batch = db.batch()
+        
         # 1. Process Deletions
         for uid in request.deleted:
-            cursor.execute("SELECT role FROM users WHERE id = ?", (uid,))
-            user = cursor.fetchone()
-            if user and user[0] != 'admin': # Admin ko delete hone se rokein
-                cursor.execute("DELETE FROM users WHERE id = ?", (uid,))
-                cursor.execute("DELETE FROM analysis_history WHERE user_id = ?", (uid,))
+            doc_ref = db.collection('users').document(uid)
+            doc = doc_ref.get()
+            if doc.exists and doc.to_dict().get('role') != 'admin': # Admin ko delete hone se rokein
+                batch.delete(doc_ref)
+                
+                history_docs = db.collection('analysis_history').where('user_id', '==', uid).stream()
+                for h_doc in history_docs:
+                    batch.delete(h_doc.reference)
 
         # 2. Process Edits
         for edit in request.edited:
-            updates, params = [], []
-            if edit.username is not None: updates.append("username = ?"); params.append(edit.username)
-            if edit.name is not None: updates.append("full_name = ?"); params.append(edit.name)
-            if edit.role is not None: updates.append("role = ?"); params.append(edit.role)
-            if edit.phone is not None: updates.append("phone_number = ?"); params.append(edit.phone)
-            if edit.email is not None: updates.append("email = ?"); params.append(edit.email)
+            doc_ref = db.collection('users').document(edit.id)
+            update_data = {}
+            if edit.username is not None: update_data["username"] = edit.username
+            if edit.name is not None: update_data["full_name"] = edit.name
+            if edit.role is not None: update_data["role"] = edit.role
+            if edit.phone is not None: update_data["phone_number"] = edit.phone
+            if edit.email is not None: update_data["email"] = edit.email
             
-            if updates:
-                params.append(edit.id)
-                cursor.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", tuple(params))
+            if update_data:
+                batch.update(doc_ref, update_data)
 
         # 3. Process Additions (Naya User Add Karne ka Code)
         hashed_pw = bcrypt.hashpw(b"123456", bcrypt.gensalt()).decode('utf-8')
         
         for add in request.added:
-            # Explicitly naming columns prevents the "5 values for 6 columns" error!
-            try:
-                cursor.execute(
-                    "INSERT INTO users (username, full_name, role, phone_number, email, password_hash) VALUES (?, ?, ?, ?, ?, ?)",
-                    (add.username, add.name, add.role, add.phone, add.email, hashed_pw)
-                )
-            except sqlite3.OperationalError:
-                # Agar table mein column ka naam 'password' hai bajaye 'password_hash' ke
-                cursor.execute(
-                    "INSERT INTO users (username, full_name, role, phone_number, email, password) VALUES (?, ?, ?, ?, ?, ?)",
-                    (add.username, add.name, add.role, add.phone, add.email, hashed_pw)
-                )
+            new_doc_ref = db.collection('users').document()
+            batch.set(new_doc_ref, {
+                "username": add.username,
+                "full_name": add.name,
+                "role": add.role,
+                "phone_number": add.phone,
+                "email": add.email,
+                "password": hashed_pw,
+                "is_verified": 1
+            })
 
-        conn.commit()
+        batch.commit()
         return {"status": "success", "message": "All operations completed successfully."}
         
     except Exception as e:
         print(f"Batch Update Error: {e}") # Yeh terminal mein detail error print karega
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if conn: conn.close()
 
 # --- PASSWORD CHANGE ROUTE ---
 @app.post("/change-password")
 def change_password(request: PasswordChangeRequest):
-    conn = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # 1. Fetch the user's current hashed password from DB
-        try:
-            cursor.execute("SELECT password FROM users WHERE id = ?", (request.user_id,))
-        except:
-            cursor.execute("SELECT password_hash FROM users WHERE id = ?", (request.user_id,))
+        db = get_db()
+        if not db:
+            raise HTTPException(status_code=500, detail="Database connection failed")
             
-        row = cursor.fetchone()
-        if not row:
+        doc_ref = db.collection('users').document(request.user_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
             
-        db_hash = row[0]
+        user_data = doc.to_dict()
+        db_hash = user_data.get('password') or user_data.get('password_hash')
         db_hash_bytes = db_hash.encode('utf-8') if isinstance(db_hash, str) else db_hash
         
-        # 2. Verify if the entered "Current Password" is correct
         if not bcrypt.checkpw(request.current_password.encode('utf-8'), db_hash_bytes):
             raise HTTPException(status_code=400, detail="Incorrect current password!")
             
-        # 3. Hash the "New Password"
         new_hash = bcrypt.hashpw(request.new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         
-        # 4. Save the new password to the database
-        try:
-            cursor.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, request.user_id))
-        except:
-            cursor.execute("UPDATE users SET password = ? WHERE id = ?", (new_hash, request.user_id))
-            
-        conn.commit()
+        doc_ref.update({"password": new_hash})
         return {"status": "success", "message": "Password updated successfully"}
         
     except HTTPException:
@@ -335,5 +311,3 @@ def change_password(request: PasswordChangeRequest):
     except Exception as e:
         print(f"Password Update Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if conn: conn.close()

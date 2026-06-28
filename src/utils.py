@@ -1,7 +1,9 @@
 import streamlit as st
-import sqlite3
 import os
 import streamlit.components.v1 as components
+import firebase_admin
+from firebase_admin import credentials
+from firebase_admin import firestore
 
 # --- CONFIG ---
 GROQ_API_KEY = "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"
@@ -29,17 +31,19 @@ DB_PATH, UPLOAD_FOLDER, CSV_PATH, MODELS_DIR, ROOT_DIR = get_paths()
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-# --- DATABASE HELPER ---
-def run_query(query, params=(), commit=False):
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    c = conn.cursor()
-    try:
-        c.execute(query, params)
-        if commit: conn.commit()
-        res = c.fetchall() if not commit else True
-        return res
-    except Exception as e: return str(e)
-    finally: conn.close()
+# Initialize Firebase
+if not firebase_admin._apps:
+    cred_path = os.path.join(ROOT_DIR, "firebase_credentials.json")
+    if os.path.exists(cred_path):
+        cred = credentials.Certificate(cred_path)
+        firebase_admin.initialize_app(cred)
+    else:
+        print("❌ Firebase credentials not found at:", cred_path)
+
+def get_db():
+    if firebase_admin._apps:
+        return firestore.client()
+    return None
 
 # --- SCROLL TO TOP FUNCTION ---
 def scroll_to_top():
@@ -53,12 +57,44 @@ def scroll_to_top():
 
 # --- HISTORY FUNCTIONS ---
 def save_analysis_to_db(user_id, inc, exp, sav, dbt, persona):
-    query = "INSERT INTO analysis_history (user_id, income, expense, savings, debt, persona) VALUES (?, ?, ?, ?, ?, ?)"
-    run_query(query, (user_id, inc, exp, sav, dbt, persona), commit=True)
+    db = get_db()
+    if not db: return
+    
+    doc_ref = db.collection('analysis_history').document()
+    doc_ref.set({
+        'user_id': user_id,
+        'income': inc,
+        'expense': exp,
+        'savings': sav,
+        'debt': dbt,
+        'persona': persona,
+        'timestamp': firestore.SERVER_TIMESTAMP
+    })
 
 def get_user_history(user_id):
-    query = "SELECT income, expense, savings, debt, persona, timestamp FROM analysis_history WHERE user_id = ? ORDER BY timestamp DESC"
-    return run_query(query, (user_id,))
+    db = get_db()
+    if not db: return []
+    
+    docs = db.collection('analysis_history').where('user_id', '==', user_id).order_by('timestamp', direction=firestore.Query.DESCENDING).stream()
+    
+    history = []
+    for doc in docs:
+        data = doc.to_dict()
+        ts = data.get('timestamp')
+        if ts:
+            # Firestore timestamps are usually datetime with timezone
+            ts = ts.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            ts = ""
+        history.append((
+            data.get('income'),
+            data.get('expense'),
+            data.get('savings'),
+            data.get('debt'),
+            data.get('persona'),
+            ts
+        ))
+    return history
 
 # --- ICON ENGINE (COMPLETE) ---
 def get_icon(name, color="#00c6ff", size=24):
@@ -245,9 +281,15 @@ def show_footer():
         st.markdown("<h4 style='color: #fff; margin-bottom: 20px; font-size: 1.1rem;'>Legal</h4>", unsafe_allow_html=True)
         with st.container():
             st.markdown('<div class="footer-link">', unsafe_allow_html=True)
-            if st.button("Privacy Policy", key="f_privacy"): st.session_state['page'] = 'privacy'; st.rerun()
-            if st.button("Terms of Service", key="f_terms"): st.session_state['page'] = 'terms'; st.rerun()
-            if st.button("Cookie Policy", key="f_cookies"): st.session_state['page'] = 'cookies'; st.rerun()
+            if st.button("Privacy Policy", key="footer_btn_privacy"):
+                st.session_state['page'] = 'privacy'
+                st.rerun()
+            if st.button("Terms of Service", key="footer_btn_terms"):
+                st.session_state['page'] = 'terms'
+                st.rerun()
+            if st.button("Cookie Policy", key="footer_btn_cookie"):
+                st.session_state['page'] = 'cookie'
+                st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
     with c4:

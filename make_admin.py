@@ -1,31 +1,24 @@
-import sqlite3
+import sys
 import os
 
-# Kyunki file root folder mein hai, db bhi yahin hai
-db_file = "users.db"
+sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
+from utils import get_db
 
 def promote_user(username):
-    if not os.path.exists(db_file):
-        print(f"❌ Error: Database file '{db_file}' nahi mili!")
+    db = get_db()
+    if not db:
+        print("❌ Firebase not initialized.")
         return
-
-    conn = sqlite3.connect(db_file)
-    c = conn.cursor()
+        
+    docs = db.collection('users').where('username', '==', username).limit(1).stream()
+    doc = next(docs, None)
     
-    # Check current user
-    c.execute("SELECT role FROM users WHERE username = ?", (username,))
-    res = c.fetchone()
-    
-    if res:
-        print(f"User found! Current Role: {res[0]}")
-        # Update to admin
-        c.execute("UPDATE users SET role = 'admin' WHERE username = ?", (username,))
-        conn.commit()
+    if doc:
+        print(f"User found! Current Role: {doc.to_dict().get('role')}")
+        doc.reference.update({"role": "admin"})
         print(f"✅ Congratulations: '{username}' is now an admin!")
     else:
         print(f"❌ User '{username}' is not found in database. Check the spellings.")
-        
-    conn.close()
 
 # --- NICHE APNA USERNAME LIKHEIN ---
 promote_user("rubaishamunir")
