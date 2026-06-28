@@ -205,7 +205,7 @@ elif st.session_state['page'] == 'auth':
                                 otp, sent = send_email_otp(reset_email, "Password Reset Code")
                                 if sent:
                                     st.session_state.reset_email = reset_email
-                                    st.session_state.reset_otp = otp
+                                    st.session_state.sent_code = otp
                                     st.session_state.forgot_step = 2
                                     st.rerun()
                                 else:
@@ -222,12 +222,14 @@ elif st.session_state['page'] == 'auth':
                 st.markdown("### Verify OTP")
                 st.info(f"Code sent to {st.session_state.reset_email}")
                 
-                entered_otp = st.text_input("Enter 4-digit Code")
+                entered_code = st.text_input("Enter 4-digit Code")
                 
                 c1, c2 = st.columns(2)
                 with c1:
                     if st.button("Verify Code", use_container_width=True, type="primary"):
-                        if entered_otp == st.session_state.reset_otp:
+                        expected = st.session_state.sent_code
+                        print(f"Expected: '{expected}', Entered: '{entered_code}'")
+                        if str(entered_code).strip() == str(expected).strip():
                             st.session_state.forgot_step = 3
                             st.rerun()
                         else:
@@ -309,7 +311,7 @@ elif st.session_state['page'] == 'auth':
                                     with st.spinner("Sending code..."):
                                         otp, sent = send_email_otp(new_email, "Verify Account")
                                         if sent:
-                                            st.session_state.signup_otp = otp
+                                            st.session_state.sent_code = otp
                                             st.session_state.signup_data = {'u': new_user, 'e': new_email, 'ph': new_phone, 'p': new_pass, 'n': new_fullname, 'img': img_storage}
                                             st.session_state.signup_step = 2
                                             st.rerun()
@@ -319,9 +321,11 @@ elif st.session_state['page'] == 'auth':
             elif st.session_state.signup_step == 2:
                 st.markdown("### Verify Email")
                 st.info(f"Code sent to {st.session_state.signup_data.get('e')}")
-                otp_check = st.text_input("Enter Code")
+                entered_code = st.text_input("Enter Code")
                 if st.button("Complete Registration", use_container_width=True):
-                    if otp_check == st.session_state.signup_otp:
+                    expected = st.session_state.sent_code
+                    print(f"Expected: '{expected}', Entered: '{entered_code}'")
+                    if str(entered_code).strip() == str(expected).strip():
                         d = st.session_state.signup_data
                         result = create_user(d['u'], d['e'], d['ph'], d['p'], d['n'], d['img'])
                         if result == True:
