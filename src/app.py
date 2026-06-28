@@ -166,7 +166,7 @@ elif st.session_state['page'] == 'auth':
             if st.session_state.forgot_step == 0:
                 st.markdown("### Welcome Back")
                 with st.form("login_form"):
-                    u_login = st.text_input("Username")
+                    u_login = st.text_input("Username").lower().strip()
                     p_login = st.text_input("Password", type="password")
                     
                     if st.form_submit_button("Sign In", use_container_width=True):
@@ -194,7 +194,7 @@ elif st.session_state['page'] == 'auth':
                 st.markdown("### Reset Password")
                 st.caption("Enter your registered email address to receive a verification code.")
                 
-                reset_email = st.text_input("Email Address")
+                reset_email = st.text_input("Email Address").lower().strip()
                 
                 c1, c2 = st.columns(2)
                 with c1:
@@ -268,9 +268,9 @@ elif st.session_state['page'] == 'auth':
             if st.session_state.signup_step == 1:
                 st.markdown("### Create Account")
                 with st.form("register_step1"):
-                    new_user = st.text_input("Username")
+                    new_user = st.text_input("Username").lower().strip()
                     new_fullname = st.text_input("Full Name")
-                    new_email = st.text_input("Email")
+                    new_email = st.text_input("Email").lower().strip()
                     new_phone = st.text_input("Phone")
                     new_pass = st.text_input("Password", type="password")
                     new_img = st.file_uploader("Profile Picture", type=['jpg', 'png', 'jpeg'])
